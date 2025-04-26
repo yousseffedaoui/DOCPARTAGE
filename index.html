@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestion de Production - Version Finale</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+ 
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+
+
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 1600px; margin: 0 auto; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 14px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; position: sticky; top: 0; }
+        input, select { width: 100%; padding: 5px; box-sizing: border-box; }
+        button { padding: 8px 12px; margin: 5px; cursor: pointer; }
+        .btn-add { background-color: #4CAF50; color: white; border: none; }
+        .btn-edit { background-color: #FFC107; color: black; border: none; }
+        .btn-delete { background-color: #f44336; color: white; border: none; }
+        .btn-report { background-color: #2196F3; color: white; border: none; }
+        .btn-save { background-color: #4CAF50; color: white; border: none; }
+        .btn-cancel { background-color: #9E9E9E; color: white; border: none; }
+        .form-group { margin-bottom: 15px; }
+        .report-controls { margin: 20px 0; padding: 15px; background: #f9f9f9; }
+        .hidden { display: none; }
+        .efficiency-high { background-color: #d4edda; }
+        .efficiency-medium { background-color: #fff3cd; }
+        .efficiency-low { background-color: #f8d7da; }
+        .editing { background-color: #e3f2fd !important; }
+        .action-btns { white-space: nowrap; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Gestion de Production - Suivi Complet</h1>
+        
+        <form id="productionForm">
+            <div class="form-group">
+                <label for="date">Date:</label>
+                <input type="date" id="date" required>
+            </div>
+            
+<div class="share-controls">
+  <h2>Partage Temps Réel</h2>
+  <button class="btn-report" onclick="demarrerPartage()">Démarrer le Partage</button>
+  <div id="shareSection" style="display:none; margin-top:10px">
+    <p>Lien à partager :</p>
+    <input type="text" id="shareLink" style="width:300px" readonly>
+    <button onclick="copierLien()">Copier</button>
+  </div>
+</div>
+
+            <div class="form-group">
+                <label for="salle">Salle de production:</label>
+                <select id="salle" required>
+                    <option value="">Sélectionnez une salle</option>
+                    <option value="142">Salle 142</option>
+                    <option value="158">Salle 158</option>
+                    <option value="135">Salle 135</option>
+                    <option value="118">Salle 118</option>
+                    <option value="122">Salle 122</option>
+                    <option value="132">Salle 132</option>
+                    <option value="139">Salle 139</option>
+                    <option value="A">Salle A</option>
+                    <option value="B">Salle B</option>
+                    <option value="C">Salle C</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="mo">Numéro de MO:</label>
+                <input type="text" id="mo" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="produit">Nom du produit:</label>
+                <input type="text" id="produit" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="quantiteDepart">Quantité de départ:</label>
+                <input type="number" id="quantiteDepart" min="0" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="quantiteTotale">Quantité totale à faire:</label>
+                <input type="number" id="quantiteTotale" min="0" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="quantiteFin">Quantité en fin de journée:</label>
+                <input type="number" id="quantiteFin" min="0" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="efficaciteTheorique">Quantité à produire à 100% (objectif idéal):</label>
+                <input type="number" id="efficaciteTheorique" min="1" required>
+                <small>Cette valeur sera utilisée comme référence pour calculer l'efficacité réelle</small>
+            </div>
+            
+            <input type="hidden" id="editIndex" value="-1">
+            
+            <button type="button" class="btn-add" id="addButton" onclick="ajouterProduction()">Ajouter</button>
+            <button type="button" class="btn-save hidden" id="saveButton" onclick="sauvegarderModification()">Enregistrer</button>
+            <button type="button" class="btn-cancel hidden" id="cancelButton" onclick="annulerModification()">Annuler</button>
+        </form>
+        
+        <div class="report-controls">
+            <h2>Génération de Rapports</h2>
+            <div>
+                <label for="reportType">Type de rapport:</label>
+                <select id="reportType">
+                    <option value="journalier">Journalier</option>
+                    <option value="hebdomadaire">Hebdomadaire</option>
+                    <option value="mensuel">Mensuel</option>
+                </select>
+            </div>
+            
+            <div id="dateSelection">
+                <div id="dailySelection">
+                    <label for="reportDate">Date:</label>
+                    <input type="date" id="reportDate">
+                </div>
+                
+                <div id="weeklySelection" class="hidden">
+                    <label for="reportWeek">Semaine:</label>
+                    <input type="week" id="reportWeek">
+                </div>
+                
+                <div id="monthlySelection" class="hidden">
+                    <label for="reportMonth">Mois:</label>
+                    <input type="month" id="reportMonth">
+                </div>
+            </div>
+            
+            <button type="button" class="btn-report" onclick="genererRapport()">Générer le Rapport PDF</button>
+        </div>
+        
+        <div style="overflow-x: auto;">
+            <table id="productionTable">
+                <thead>
+                    <tr>
+                        <th>Actions</th>
+                        <th>Date</th>
+                        <th>Salle</th>
+                        <th>MO</th>
+                        <th>Produit</th>
+                        <th>Départ</th>
+                        <th>Total</th>
+                        <th>Fin jour</th>
+                        <th>Produit</th>
+                        <th>Reste</th>
+                        <th>Objectif 100%</th>
+                        <th>Efficacité</th>
+                    </tr>
+                </thead>
+                <tbody id="productionData">
+                    <!-- Les données seront ajoutées ici -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+let sessionId = null;
+let isHost = false;
+
+function copierLien() {
+  const copyText = document.getElementById('shareLink');
+  copyText.select();
+  document.execCommand('copy');
+  alert('Lien copié dans le presse-papiers');
+}
+
+function demarrerPartage() {
+  sessionId = generateUniqueId();
+  isHost = true;
+  document.getElementById('shareLink').value = `${window.location.href.split('?')[0]}?session=${sessionId}`;
+  
+  // Sauvegarde initiale
+  sauvegarderSurFirebase();
+  
+  // Mettre à jour Firebase à chaque changement
+  setInterval(sauvegarderSurFirebase, 2000);
+}
+
+function rejoindreSession() {
+  sessionId = new URLSearchParams(window.location.search).get('session');
+  if (sessionId) {
+    chargerDepuisFirebase();
+    setInterval(chargerDepuisFirebase, 2000);
+  }
+}
+
+function generateUniqueId() {
+  return 'session-' + Math.random().toString(36).substr(2, 9);
+}
+
+function sauvegarderSurFirebase() {
+  if (isHost && sessionId) {
+    database.ref('sessions/' + sessionId).set(productions)
+      .catch(err => console.error("Erreur sauvegarde:", err));
+  }
+}
+
+function chargerDepuisFirebase() {
+  if (sessionId) {
+    database.ref('sessions/' + sessionId).on('value', (snapshot) => {
+      const data = snapshot.val();
+      if (data && !isHost) {
+        productions = data;
+        localStorage.setItem('productions', JSON.stringify(productions));
+        afficherProductions();
+      }
+    });
+  }
+}
+// Configurez votre projet Firebase (remplacez par vos infos)
+const firebaseConfig = {
+  apiKey: "AIzaSyAxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  authDomain: "votre-projet.firebaseapp.com",
+  databaseURL: "https://votre-projet.firebaseio.com",
+  projectId: "votre-projet",
+  storageBucket: "votre-projet.appspot.com",
+  messagingSenderId: "1234567890",
+  appId: "1:1234567890:web:abc123abc123abc123"
+};
+
+// Initialisez Firebase
+firebase.initializeApp(firebaseConfig);
+const database = firebase.database();
+
+        // Initialisation des données
+        let productions = JSON.parse(localStorage.getItem('productions')) || [];
+        let editIndex = -1;
+        
+        // Initialisation de jsPDF
+        const { jsPDF } = window.jspdf;
+        
+        // Au chargement de la page
+        document.addEventListener('DOMContentLoaded', function() {
+  // ... votre code existant ...
+  
+  // Vérifie si on rejoint une session
+  rejoindreSession();
+});
+            
+            // Configurer la date du jour par défaut
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('date').value = today;
+            document.getElementById('reportDate').value = today;
+            
+            // Gérer le changement de type de rapport
+            document.getElementById('reportType').addEventListener('change', function() {
+                document.getElementById('dailySelection').classList.add('hidden');
+                document.getElementById('weeklySelection').classList.add('hidden');
+                document.getElementById('monthlySelection').classList.add('hidden');
+                
+                if (this.value === 'journalier') {
+                    document.getElementById('dailySelection').classList.remove('hidden');
+                } else if (this.value === 'hebdomadaire') {
+                    document.getElementById('weeklySelection').classList.remove('hidden');
+                } else if (this.value === 'mensuel') {
+                    document.getElementById('monthlySelection').classList.remove('hidden');
+                }
+            });
+            
+            // Calculer automatiquement l'objectif 100% basé sur la quantité totale
+            document.getElementById('quantiteTotale').addEventListener('change', function() {
+                const qteTotale = parseInt(this.value);
+                if (!isNaN(qteTotale) && qteTotale > 0) {
+                    document.getElementById('efficaciteTheorique').value = qteTotale;
+                }
+            });
+        });
+        
+        function ajouterProduction() {
+            // Récupérer les valeurs du formulaire
+            const date = document.getElementById('date').value;
+            const salle = document.getElementById('salle').value;
+            const mo = document.getElementById('mo').value;
+            const produit = document.getElementById('produit').value;
+            const quantiteDepart = parseInt(document.getElementById('quantiteDepart').value);
+            const quantiteTotale = parseInt(document.getElementById('quantiteTotale').value);
+            const quantiteFin = parseInt(document.getElementById('quantiteFin').value);
+            const efficaciteTheorique = parseInt(document.getElementById('efficaciteTheorique').value);
+            
+            // Validation
+            if (!date || !salle || !mo || !produit || isNaN(quantiteDepart) || 
+                isNaN(quantiteTotale) || isNaN(quantiteFin) || isNaN(efficaciteTheorique)) {
+                alert('Veuillez remplir tous les champs correctement');
+                return;
+            }
+            
+            if (quantiteFin < quantiteDepart) {
+                alert('La quantité en fin de journée ne peut pas être inférieure à la quantité de départ');
+                return;
+            }
+            
+            if (quantiteTotale < quantiteDepart) {
+                alert('La quantité totale à faire ne peut pas être inférieure à la quantité de départ');
+                return;
+            }
+            
+            // Calculer les valeurs dérivées
+            const quantiteProduite = quantiteFin - quantiteDepart;
+            const reste = quantiteTotale - quantiteFin;
+            
+            // Calcul de l'efficacité réelle
+            const efficaciteReelle = Math.min(
+                Math.round((quantiteProduite / efficaciteTheorique) * 100),
+                200
+            );
+            
+            // Créer l'objet production
+            const production = {
+                date,
+                salle,
+                mo,
+                produit,
+                quantiteDepart,
+                quantiteTotale,
+                quantiteFin,
+                quantiteProduite,
+                reste,
+                efficaciteTheorique,
+                efficaciteReelle
+            };
+            
+            // Ajouter à la liste
+            productions.push(production);
+            
+            // Sauvegarder dans le localStorage
+            localStorage.setItem('productions', JSON.stringify(productions));
+            
+            // Mettre à jour l'affichage
+            afficherProductions();
+            
+            // Réinitialiser le formulaire
+            document.getElementById('productionForm').reset();
+            document.getElementById('date').value = new Date().toISOString().split('T')[0];
+            document.getElementById('editIndex').value = "-1";
+            document.getElementById('addButton').classList.remove('hidden');
+            document.getElementById('saveButton').classList.add('hidden');
+            document.getElementById('cancelButton').classList.add('hidden');
+        }
+        
+        function afficherProductions() {
+            const tbody = document.getElementById('productionData');
+            tbody.innerHTML = '';
+            
+            productions.forEach((prod, index) => {
+                const row = document.createElement('tr');
+                if (index === editIndex) {
+                    row.classList.add('editing');
+                }
+                
+                // Appliquer une classe CSS en fonction de l'efficacité
+                if (prod.efficaciteReelle >= 90) {
+                    row.classList.add('efficiency-high');
+                } else if (prod.efficaciteReelle >= 70) {
+                    row.classList.add('efficiency-medium');
+                } else {
+                    row.classList.add('efficiency-low');
+                }
+                
+                row.innerHTML = `
+                    <td class="action-btns">
+                        <button class="btn-edit" onclick="modifierProduction(${index})">✏️</button>
+                        <button class="btn-delete" onclick="supprimerProduction(${index})">🗑️</button>
+                    </td>
+                    <td>${prod.date}</td>
+                    <td>Salle ${prod.salle}</td>
+                    <td>${prod.mo}</td>
+                    <td>${prod.produit}</td>
+                    <td>${prod.quantiteDepart}</td>
+                    <td>${prod.quantiteTotale}</td>
+                    <td>${prod.quantiteFin}</td>
+                    <td>${prod.quantiteProduite}</td>
+                    <td>${prod.reste}</td>
+                    <td>${prod.efficaciteTheorique}</td>
+                    <td>${prod.efficaciteReelle}%</td>
+                `;
+                
+                tbody.appendChild(row);
+            });
+        }
+        
+        function modifierProduction(index) {
+            const prod = productions[index];
+            editIndex = index;
+            
+            // Remplir le formulaire avec les données à modifier
+            document.getElementById('date').value = prod.date;
+            document.getElementById('salle').value = prod.salle;
+            document.getElementById('mo').value = prod.mo;
+            document.getElementById('produit').value = prod.produit;
+            document.getElementById('quantiteDepart').value = prod.quantiteDepart;
+            document.getElementById('quantiteTotale').value = prod.quantiteTotale;
+            document.getElementById('quantiteFin').value = prod.quantiteFin;
+            document.getElementById('efficaciteTheorique').value = prod.efficaciteTheorique;
+            document.getElementById('editIndex').value = index;
+            
+            // Changer les boutons
+            document.getElementById('addButton').classList.add('hidden');
+            document.getElementById('saveButton').classList.remove('hidden');
+            document.getElementById('cancelButton').classList.remove('hidden');
+            
+            // Mettre à jour l'affichage
+            afficherProductions();
+        }
+        
+        function sauvegarderModification() {
+            const index = parseInt(document.getElementById('editIndex').value);
+            if (index < 0 || index >= productions.length) return;
+            
+            // Récupérer les nouvelles valeurs
+            const date = document.getElementById('date').value;
+            const salle = document.getElementById('salle').value;
+            const mo = document.getElementById('mo').value;
+            const produit = document.getElementById('produit').value;
+            const quantiteDepart = parseInt(document.getElementById('quantiteDepart').value);
+            const quantiteTotale = parseInt(document.getElementById('quantiteTotale').value);
+            const quantiteFin = parseInt(document.getElementById('quantiteFin').value);
+            const efficaciteTheorique = parseInt(document.getElementById('efficaciteTheorique').value);
+            
+            // Validation
+            if (!date || !salle || !mo || !produit || isNaN(quantiteDepart) || 
+                isNaN(quantiteTotale) || isNaN(quantiteFin) || isNaN(efficaciteTheorique)) {
+                alert('Veuillez remplir tous les champs correctement');
+                return;
+            }
+            
+            // Calculer les nouvelles valeurs
+            const quantiteProduite = quantiteFin - quantiteDepart;
+            const reste = quantiteTotale - quantiteFin;
+            const efficaciteReelle = Math.min(
+                Math.round((quantiteProduite / efficaciteTheorique) * 100),
+                200
+            );
+            
+            // Mettre à jour l'objet
+            productions[index] = {
+                date,
+                salle,
+                mo,
+                produit,
+                quantiteDepart,
+                quantiteTotale,
+                quantiteFin,
+                quantiteProduite,
+                reste,
+                efficaciteTheorique,
+                efficaciteReelle
+            };
+            
+            // Sauvegarder
+            localStorage.setItem('productions', JSON.stringify(productions));
+            
+            // Réinitialiser
+            document.getElementById('productionForm').reset();
+            document.getElementById('date').value = new Date().toISOString().split('T')[0];
+            editIndex = -1;
+            document.getElementById('editIndex').value = "-1";
+            document.getElementById('addButton').classList.remove('hidden');
+            document.getElementById('saveButton').classList.add('hidden');
+            document.getElementById('cancelButton').classList.add('hidden');
+            
+            // Mettre à jour l'affichage
+            afficherProductions();
+        }
+        
+        function annulerModification() {
+            document.getElementById('productionForm').reset();
+            document.getElementById('date').value = new Date().toISOString().split('T')[0];
+            editIndex = -1;
+            document.getElementById('editIndex').value = "-1";
+            document.getElementById('addButton').classList.remove('hidden');
+            document.getElementById('saveButton').classList.add('hidden');
+            document.getElementById('cancelButton').classList.add('hidden');
+            afficherProductions();
+        }
+        
+        function supprimerProduction(index) {
+            if (confirm('Voulez-vous vraiment supprimer cette entrée?')) {
+                productions.splice(index, 1);
+                localStorage.setItem('productions', JSON.stringify(productions));
+                afficherProductions();
+            }
+        }
+        
+        function genererRapport() {
+            const reportType = document.getElementById('reportType').value;
+            let filteredData = [];
+            let titre = '';
+            
+            // Filtrer les données selon le type de rapport
+            if (reportType === 'journalier') {
+                const date = document.getElementById('reportDate').value;
+                filteredData = productions.filter(p => p.date === date);
+                titre = `Rapport Journalier - ${date}`;
+            } 
+            else if (reportType === 'hebdomadaire') {
+                const weekInput = document.getElementById('reportWeek').value;
+                const year = parseInt(weekInput.substring(0, 4));
+                const week = parseInt(weekInput.substring(6));
+                
+                filteredData = productions.filter(p => {
+                    const prodDate = new Date(p.date);
+                    const prodYear = prodDate.getFullYear();
+                    const prodWeek = getWeekNumber(prodDate);
+                    
+                    return prodYear === year && prodWeek === week;
+                });
+                
+                titre = `Rapport Hebdomadaire - Semaine ${week} de ${year}`;
+            } 
+            else if (reportType === 'mensuel') {
+                const monthInput = document.getElementById('reportMonth').value;
+                const year = monthInput.substring(0, 4);
+                const month = monthInput.substring(5, 7);
+                
+                filteredData = productions.filter(p => {
+                    return p.date.startsWith(`${year}-${month}`);
+                });
+                
+                const moisNoms = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", 
+                                 "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
+                const moisNom = moisNoms[parseInt(month) - 1];
+                
+                titre = `Rapport Mensuel - ${moisNom} ${year}`;
+            }
+            
+            if (filteredData.length === 0) {
+                alert('Aucune donnée disponible pour cette période');
+                return;
+            }
+            
+            // Calculer les totaux et moyennes
+            const totalDepart = filteredData.reduce((sum, p) => sum + p.quantiteDepart, 0);
+            const totalAFaire = filteredData.reduce((sum, p) => sum + p.quantiteTotale, 0);
+            const totalFin = filteredData.reduce((sum, p) => sum + p.quantiteFin, 0);
+            const totalProduit = filteredData.reduce((sum, p) => sum + p.quantiteProduite, 0);
+            const totalReste = filteredData.reduce((sum, p) => sum + p.reste, 0);
+            const totalObjectif = filteredData.reduce((sum, p) => sum + p.efficaciteTheorique, 0);
+            const moyenneEfficacite = Math.round(filteredData.reduce((sum, p) => sum + p.efficaciteReelle, 0) / filteredData.length);
+            
+            // Préparer les données pour le PDF - VERSION CORRIGÉE
+            const pdfData = filteredData.map(p => [
+                p.date,
+                `Salle ${p.salle}`,
+                p.mo,
+                p.produit,
+                p.quantiteDepart,
+                p.quantiteTotale,
+                p.quantiteFin,
+                p.quantiteProduite,
+                p.reste,
+                p.efficaciteTheorique,
+                `${p.efficaciteReelle}%`  // Formatage explicite du pourcentage
+            ]);
+            
+            // Ajouter les totaux
+            pdfData.push([
+                'TOTAUX',
+                '',
+                '',
+                '',
+                totalDepart,
+                totalAFaire,
+                totalFin,
+                totalProduit,
+                totalReste,
+                totalObjectif,
+                `${moyenneEfficacite}%`  // Pourcentage pour la moyenne
+            ]);
+            
+            // Créer le PDF avec une mise en page optimisée
+            const doc = new jsPDF({
+                orientation: 'landscape',
+                unit: 'mm'
+            });
+            
+            // Titre
+            doc.setFontSize(16);
+            doc.text(titre, 15, 15);
+            doc.setFontSize(10);
+            doc.text(`Généré le: ${new Date().toLocaleDateString()}`, 15, 22);
+            
+            // Configuration du tableau avec correction pour l'efficacité
+            doc.autoTable({
+                startY: 25,
+                head: [
+                    [
+                        'Date', 
+                        'Salle', 
+                        'MO', 
+                        'Produit', 
+                        'Départ', 
+                        'Total', 
+                        'Qté fin', 
+                        'Produit', 
+                        'Reste', 
+                        'Objectif', 
+                        '%'
+                    ]
+                ],
+                body: pdfData,
+                margin: { top: 25 },
+                styles: {
+                    fontSize: 9,
+                    cellPadding: 3,
+                    overflow: 'linebreak',
+                    minCellHeight: 8
+                },
+                headStyles: {
+                    fillColor: [51, 122, 183],
+                    textColor: 255,
+                    fontSize: 10,
+                    cellPadding: 4
+                },
+                columnStyles: {
+                    0: { cellWidth: 25 },  // Date
+                    1: { cellWidth: 25 },  // Salle
+                    2: { cellWidth: 15 },  // MO
+                    3: { cellWidth: 45 },  // Produit
+                    4: { cellWidth: 25 },  // Départ
+                    5: { cellWidth: 25 },  // Total
+                    6: { cellWidth: 25 },  // Fin jour
+                    7: { cellWidth: 25 },  // Produit
+                    8: { cellWidth: 25 },  // Reste
+                    9: { cellWidth: 25 },  // Objectif
+                    10: { 
+                        cellWidth: 20,  // Efficacité
+                        textColor: [0, 0, 0] // Texte en noir garanti
+                    }
+                },
+                didDrawCell: function(data) {
+                    // Version corrigée pour l'affichage de l'efficacité
+                    if (data.column.index === 10 && data.cell.raw) {
+                        // Extraire la valeur numérique du pourcentage
+                        const effValue = parseInt(data.cell.raw.toString().replace('%', ''));
+                        
+                        if (!isNaN(effValue)) {
+                            // Appliquer la couleur de fond
+                            if (effValue >= 90) {
+                                doc.setFillColor(212, 237, 218); // Vert clair
+                            } else if (effValue >= 70) {
+                                doc.setFillColor(255, 243, 205); // Jaune clair
+                            } else {
+                                doc.setFillColor(248, 215, 218); // Rouge clair
+                            }
+                            
+                            // Dessiner le fond coloré
+                            doc.rect(data.cell.x, data.cell.y, data.cell.width, data.cell.height, 'F');
+                            
+                            // Réécrire le texte pour garantir sa visibilité
+                            doc.setTextColor(0, 0, 0); // Noir
+                            doc.text(
+                                data.cell.raw,
+                                data.cell.x + data.cell.width / 2,
+                                data.cell.y + data.cell.height / 2 + 3,
+                                { align: 'center' }
+                            );
+                        }
+                    }
+                },
+                didDrawPage: function(data) {
+                    // Footer
+                    doc.setFontSize(8);
+                    doc.setTextColor(100);
+                    doc.text('Système de Gestion de Production', data.settings.margin.left, doc.internal.pageSize.height - 10);
+                }
+            });
+            
+            // Sauvegarder le PDF
+            doc.save(`Rapport_Production_${reportType}.pdf`);
+        }
+
+
+
+    </script>
+</body>
+</html>
