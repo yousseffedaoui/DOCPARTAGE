@@ -2,15 +2,15 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestion de Production - Version Lecture Seule</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Gestion de Production - Version Collaborative</title>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
     <style>
         body { font-family: Arial, sans-serif; margin: 20px; }
-        .container { max-width: 1600px; margin: 0 auto; }
+        .container { max-width: 1600px; margin: 0 auto; padding: 10px; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 14px; }
         th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
         th { background-color: #f2f2f2; position: sticky; top: 0; }
@@ -37,7 +37,8 @@
         .editing { background-color: #e3f2fd !important; }
         .action-btns { white-space: nowrap; }
         #shareLink { 
-            width: 300px; 
+            width: 100%; 
+            max-width: 300px;
             padding: 5px;
             margin-right: 10px;
         }
@@ -66,21 +67,84 @@
             font-size: 12px;
             margin-left: 10px;
         }
+
+        /* Styles spécifiques pour mobile */
+        @media screen and (max-width: 768px) {
+            body { margin: 10px; }
+            table { font-size: 12px; }
+            th, td { padding: 4px; }
+            button { padding: 6px 8px; margin: 2px; font-size: 12px; }
+            .container { padding: 5px; }
+            
+            .action-btns button {
+                padding: 3px 5px;
+                margin: 1px;
+            }
+            
+            #shareLink {
+                width: 100%;
+                margin-bottom: 10px;
+            }
+        }
+
+        /* Style pour les tables en mode mobile */
+        @media screen and (max-width: 600px) {
+            table, thead, tbody, th, td, tr { 
+                display: block; 
+            }
+            
+            thead tr { 
+                position: absolute;
+                top: -9999px;
+                left: -9999px;
+            }
+            
+            tr { border: 1px solid #ccc; margin-bottom: 10px; }
+            
+            td { 
+                border: none;
+                border-bottom: 1px solid #eee; 
+                position: relative;
+                padding-left: 50%; 
+                text-align: right;
+            }
+            
+            td:before { 
+                content: attr(data-label);
+                position: absolute;
+                left: 6px;
+                font-weight: bold;
+                text-align: left;
+            }
+            
+            td:nth-of-type(1):before { content: "Actions"; }
+            td:nth-of-type(2):before { content: "Date"; }
+            td:nth-of-type(3):before { content: "Salle"; }
+            td:nth-of-type(4):before { content: "MO"; }
+            td:nth-of-type(5):before { content: "Produit"; }
+            td:nth-of-type(6):before { content: "Départ"; }
+            td:nth-of-type(7):before { content: "Total"; }
+            td:nth-of-type(8):before { content: "Fin jour"; }
+            td:nth-of-type(9):before { content: "Produit"; }
+            td:nth-of-type(10):before { content: "Reste"; }
+            td:nth-of-type(11):before { content: "Objectif"; }
+            td:nth-of-type(12):before { content: "Efficacité"; }
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Gestion de Production - Mode Lecture Seule</h1>
+        <h1>Gestion de Production - Version Collaborative</h1>
         
         <div class="share-controls">
             <h2>Partage Temps Réel <span id="statusIndicator" class="status-indicator status-offline"></span></h2>
             <div id="hostControls">
                 <button class="btn-share" id="startSharingBtn" onclick="demarrerPartage()">Démarrer le Partage</button>
                 <div id="shareSection" style="display:none; margin-top:10px">
-                    <p>Lien à partager (lecture seule) :</p>
+                    <p>Lien à partager :</p>
                     <input type="text" id="shareLink" readonly>
                     <button onclick="copierLien()">Copier</button>
-                    <p><small>Toute personne avec ce lien pourra voir vos données en temps réel mais ne pourra pas les modifier</small></p>
+                    <p><small>Toute personne avec ce lien verra vos modifications en temps réel</small></p>
                 </div>
             </div>
             <div id="viewerInfo" style="display:none; margin-top:10px">
@@ -89,7 +153,7 @@
             </div>
         </div>
         
-        <form id="productionForm" class="readonly-form">
+        <form id="productionForm">
             <div class="form-group">
                 <label for="date">Date:</label>
                 <input type="date" id="date" required>
@@ -207,6 +271,11 @@
     </div>
 
     <script>
+        // Détection mobile
+        function isMobile() {
+            return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        }
+
         // Initialisation Firebase
         const firebaseConfig = {
             apiKey: "AIzaSyAxxxxxxxxxxxxxxxxxxxxxxxxxxx",
@@ -234,6 +303,21 @@
         
         // Au chargement de la page
         document.addEventListener('DOMContentLoaded', function() {
+            // Nettoyer le cache du service worker si existant
+            if('serviceWorker' in navigator) {
+                navigator.serviceWorker.getRegistrations()
+                    .then(function(registrations) {
+                        for(let registration of registrations) {
+                            registration.unregister();
+                        }
+                    });
+            }
+
+            // Appliquer les styles mobiles si nécessaire
+            if(isMobile()) {
+                document.body.classList.add('mobile-view');
+            }
+
             // Afficher les données existantes
             afficherProductions();
             
@@ -265,11 +349,18 @@
                 }
             });
             
-            // Vérifie si on rejoint une session existante (mode lecture seule)
+            // Vérifie si on rejoint une session existante
             verifierSessionExistante();
+
+            // Rafraîchissement automatique plus fréquent sur mobile
+            if(isMobile()) {
+                setInterval(() => {
+                    if(sessionId) chargerDepuisFirebase();
+                }, 2000);
+            }
         });
         
-        // Fonctions de partage en temps réel (lecture seule)
+        // Fonctions de partage en temps réel
         function verifierSessionExistante() {
             const urlParams = new URLSearchParams(window.location.search);
             const session = urlParams.get('session');
@@ -281,12 +372,15 @@
                 document.getElementById('statusIndicator').className = 'status-indicator status-online';
                 document.getElementById('productionForm').classList.add('readonly-form');
                 
-                // Démarrer la synchronisation en lecture seule
-                syncInterval = setInterval(chargerDepuisFirebase, 2000);
-                chargerDepuisFirebase();
-            } else {
-                // Mode hôte avec droits complets
-                document.getElementById('productionForm').classList.remove('readonly-form');
+                // Démarrer la synchronisation en temps réel
+                database.ref('sessions/' + sessionId).on('value', (snapshot) => {
+                    const data = snapshot.val();
+                    if (data) {
+                        productions = data.data || [];
+                        localStorage.setItem('productions', JSON.stringify(productions));
+                        afficherProductions();
+                    }
+                });
             }
         }
         
@@ -311,7 +405,8 @@
         }
         
         function quitterSession() {
-            clearInterval(syncInterval);
+            if(syncInterval) clearInterval(syncInterval);
+            if(sessionId) database.ref('sessions/' + sessionId).off();
             sessionId = null;
             window.location.href = window.location.href.split('?')[0];
         }
@@ -335,9 +430,9 @@
             if (sessionId) {
                 database.ref('sessions/' + sessionId).once('value')
                     .then((snapshot) => {
-                        const sessionData = snapshot.val();
-                        if (sessionData && sessionData.data) {
-                            productions = sessionData.data;
+                        const data = snapshot.val();
+                        if (data) {
+                            productions = data.data || [];
                             localStorage.setItem('productions', JSON.stringify(productions));
                             afficherProductions();
                         }
@@ -349,8 +444,15 @@
         function copierLien() {
             const copyText = document.getElementById('shareLink');
             copyText.select();
+            copyText.setSelectionRange(0, 99999);
             document.execCommand('copy');
-            alert('Lien copié dans le presse-papiers !');
+            
+            // Feedback visuel
+            const originalText = copyText.value;
+            copyText.value = 'Lien copié !';
+            setTimeout(() => {
+                copyText.value = originalText;
+            }, 2000);
         }
         
         // Fonctions de gestion des productions
@@ -453,22 +555,23 @@
                     row.classList.add('efficiency-low');
                 }
                 
+                // Préparer les attributs data-label pour l'affichage mobile
                 row.innerHTML = `
-                    <td class="action-btns">
+                    <td class="action-btns" data-label="Actions">
                         <button class="btn-edit" onclick="modifierProduction(${index})" ${(!isHost && sessionId) ? 'disabled' : ''}>✏️</button>
                         <button class="btn-delete" onclick="supprimerProduction(${index})" ${(!isHost && sessionId) ? 'disabled' : ''}>🗑️</button>
                     </td>
-                    <td>${prod.date}</td>
-                    <td>Salle ${prod.salle}</td>
-                    <td>${prod.mo}</td>
-                    <td>${prod.produit}</td>
-                    <td>${prod.quantiteDepart}</td>
-                    <td>${prod.quantiteTotale}</td>
-                    <td>${prod.quantiteFin}</td>
-                    <td>${prod.quantiteProduite}</td>
-                    <td>${prod.reste}</td>
-                    <td>${prod.efficaciteTheorique}</td>
-                    <td>${prod.efficaciteReelle}%</td>
+                    <td data-label="Date">${prod.date}</td>
+                    <td data-label="Salle">Salle ${prod.salle}</td>
+                    <td data-label="MO">${prod.mo}</td>
+                    <td data-label="Produit">${prod.produit}</td>
+                    <td data-label="Départ">${prod.quantiteDepart}</td>
+                    <td data-label="Total">${prod.quantiteTotale}</td>
+                    <td data-label="Fin jour">${prod.quantiteFin}</td>
+                    <td data-label="Produit">${prod.quantiteProduite}</td>
+                    <td data-label="Reste">${prod.reste}</td>
+                    <td data-label="Objectif">${prod.efficaciteTheorique}</td>
+                    <td data-label="Efficacité">${prod.efficaciteReelle}%</td>
                 `;
                 
                 tbody.appendChild(row);
@@ -744,7 +847,7 @@
                     8: { cellWidth: 20 },  // Reste
                     9: { cellWidth: 25 },  // Objectif
                     10: { 
-                        cellWidth: 25,  // Efficacité
+                        cellWidth: 15,  // Efficacité
                         textColor: [0, 0, 0] // Texte en noir garanti
                     }
                 },
