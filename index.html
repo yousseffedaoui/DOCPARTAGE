@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestion de Production - Version Collaborative</title>
+    <title>Gestion de Production - Version Lecture Seule</title>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -54,28 +54,42 @@
         .status-offline {
             background-color: #f44336;
         }
+        .readonly-form {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+        .permission-badge {
+            background-color: #ff9800;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 10px;
+            font-size: 12px;
+            margin-left: 10px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Gestion de Production - Version Collaborative</h1>
+        <h1>Gestion de Production - Mode Lecture Seule</h1>
         
         <div class="share-controls">
             <h2>Partage Temps Réel <span id="statusIndicator" class="status-indicator status-offline"></span></h2>
-            <button class="btn-share" id="startSharingBtn" onclick="demarrerPartage()">Démarrer le Partage</button>
-            <div id="shareSection" style="display:none; margin-top:10px">
-                <p>Lien à partager :</p>
-                <input type="text" id="shareLink" readonly>
-                <button onclick="copierLien()">Copier</button>
-                <p><small>Toute personne avec ce lien verra vos modifications en temps réel</small></p>
+            <div id="hostControls">
+                <button class="btn-share" id="startSharingBtn" onclick="demarrerPartage()">Démarrer le Partage</button>
+                <div id="shareSection" style="display:none; margin-top:10px">
+                    <p>Lien à partager (lecture seule) :</p>
+                    <input type="text" id="shareLink" readonly>
+                    <button onclick="copierLien()">Copier</button>
+                    <p><small>Toute personne avec ce lien pourra voir vos données en temps réel mais ne pourra pas les modifier</small></p>
+                </div>
             </div>
             <div id="viewerInfo" style="display:none; margin-top:10px">
-                <p>Mode observateur - Vous visualisez les données en temps réel</p>
+                <p><span class="permission-badge">LECTURE SEULE</span> Vous visualisez les données en temps réel</p>
                 <button class="btn-share" onclick="quitterSession()">Quitter la session</button>
             </div>
         </div>
         
-        <form id="productionForm">
+        <form id="productionForm" class="readonly-form">
             <div class="form-group">
                 <label for="date">Date:</label>
                 <input type="date" id="date" required>
@@ -251,26 +265,28 @@
                 }
             });
             
-            // Vérifie si on rejoint une session existante
+            // Vérifie si on rejoint une session existante (mode lecture seule)
             verifierSessionExistante();
         });
         
-        // Fonctions de partage en temps réel
+        // Fonctions de partage en temps réel (lecture seule)
         function verifierSessionExistante() {
             const urlParams = new URLSearchParams(window.location.search);
             const session = urlParams.get('session');
             
             if (session) {
                 sessionId = session;
-                document.getElementById('startSharingBtn').style.display = 'none';
+                document.getElementById('hostControls').style.display = 'none';
                 document.getElementById('viewerInfo').style.display = 'block';
                 document.getElementById('statusIndicator').className = 'status-indicator status-online';
-                document.getElementById('productionForm').style.opacity = '0.5';
-                document.getElementById('productionForm').style.pointerEvents = 'none';
+                document.getElementById('productionForm').classList.add('readonly-form');
                 
-                // Démarrer la synchronisation
+                // Démarrer la synchronisation en lecture seule
                 syncInterval = setInterval(chargerDepuisFirebase, 2000);
                 chargerDepuisFirebase();
+            } else {
+                // Mode hôte avec droits complets
+                document.getElementById('productionForm').classList.remove('readonly-form');
             }
         }
         
@@ -306,9 +322,12 @@
         
         function sauvegarderSurFirebase() {
             if (isHost && sessionId) {
-                database.ref('sessions/' + sessionId).set(productions)
-                    .then(() => console.log("Données sauvegardées"))
-                    .catch(err => console.error("Erreur sauvegarde:", err));
+                database.ref('sessions/' + sessionId).set({
+                    data: productions,
+                    timestamp: firebase.database.ServerValue.TIMESTAMP
+                })
+                .then(() => console.log("Données sauvegardées"))
+                .catch(err => console.error("Erreur sauvegarde:", err));
             }
         }
         
@@ -316,9 +335,9 @@
             if (sessionId) {
                 database.ref('sessions/' + sessionId).once('value')
                     .then((snapshot) => {
-                        const data = snapshot.val();
-                        if (data) {
-                            productions = data;
+                        const sessionData = snapshot.val();
+                        if (sessionData && sessionData.data) {
+                            productions = sessionData.data;
                             localStorage.setItem('productions', JSON.stringify(productions));
                             afficherProductions();
                         }
@@ -336,6 +355,11 @@
         
         // Fonctions de gestion des productions
         function ajouterProduction() {
+            if (!isHost && sessionId) {
+                alert('Vous êtes en mode lecture seule. Seul l\'hôte peut modifier les données.');
+                return;
+            }
+            
             // Récupérer les valeurs du formulaire
             const date = document.getElementById('date').value;
             const salle = document.getElementById('salle').value;
@@ -431,8 +455,8 @@
                 
                 row.innerHTML = `
                     <td class="action-btns">
-                        <button class="btn-edit" onclick="modifierProduction(${index})" ${isHost ? '' : 'disabled'}>✏️</button>
-                        <button class="btn-delete" onclick="supprimerProduction(${index})" ${isHost ? '' : 'disabled'}>🗑️</button>
+                        <button class="btn-edit" onclick="modifierProduction(${index})" ${(!isHost && sessionId) ? 'disabled' : ''}>✏️</button>
+                        <button class="btn-delete" onclick="supprimerProduction(${index})" ${(!isHost && sessionId) ? 'disabled' : ''}>🗑️</button>
                     </td>
                     <td>${prod.date}</td>
                     <td>Salle ${prod.salle}</td>
@@ -452,7 +476,10 @@
         }
         
         function modifierProduction(index) {
-            if (!isHost && sessionId) return;
+            if (!isHost && sessionId) {
+                alert('Vous êtes en mode lecture seule. Seul l\'hôte peut modifier les données.');
+                return;
+            }
             
             const prod = productions[index];
             editIndex = index;
@@ -478,7 +505,10 @@
         }
         
         function sauvegarderModification() {
-            if (!isHost && sessionId) return;
+            if (!isHost && sessionId) {
+                alert('Vous êtes en mode lecture seule. Seul l\'hôte peut modifier les données.');
+                return;
+            }
             
             const index = parseInt(document.getElementById('editIndex').value);
             if (index < 0 || index >= productions.length) return;
@@ -555,7 +585,10 @@
         }
         
         function supprimerProduction(index) {
-            if (!isHost && sessionId) return;
+            if (!isHost && sessionId) {
+                alert('Vous êtes en mode lecture seule. Seul l\'hôte peut modifier les données.');
+                return;
+            }
             
             if (confirm('Voulez-vous vraiment supprimer cette entrée?')) {
                 productions.splice(index, 1);
@@ -678,11 +711,11 @@
                         'Produit', 
                         'Départ', 
                         'Total', 
-                        'Qté fin', 
+                        'Fin jour', 
                         'Produit', 
                         'Reste', 
-                        'Objec', 
-                        '  %  '
+                        'Objectif', 
+                        'Efficacité'
                     ]
                 ],
                 body: pdfData,
@@ -702,14 +735,14 @@
                 columnStyles: {
                     0: { cellWidth: 25 },  // Date
                     1: { cellWidth: 20 },  // Salle
-                    2: { cellWidth: 20 },  // MO
+                    2: { cellWidth: 18 },  // MO
                     3: { cellWidth: 50 },  // Produit
-                    4: { cellWidth:25 },  // Départ
+                    4: { cellWidth: 20 },  // Départ
                     5: { cellWidth: 20 },  // Total
                     6: { cellWidth: 25 },  // Fin jour
                     7: { cellWidth: 25 },  // Produit
-                    8: { cellWidth: 25 },  // Reste
-                    9: { cellWidth: 20 },  // Objectif
+                    8: { cellWidth: 20 },  // Reste
+                    9: { cellWidth: 25 },  // Objectif
                     10: { 
                         cellWidth: 25,  // Efficacité
                         textColor: [0, 0, 0] // Texte en noir garanti
